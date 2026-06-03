@@ -3,3 +3,4 @@ google-genai
 pandas
 python-dotenv
 st-gsheets-connection
+streamlit-option-menu
