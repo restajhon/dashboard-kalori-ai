@@ -2,8 +2,10 @@ import streamlit as st
 import os
 import json
 import pandas as pd
+from datetime import datetime
 from dotenv import load_dotenv
 from google import genai
+from streamlit_gsheets import GSheetsConnection
 
 # 1. Membaca API Key
 load_dotenv()
@@ -12,11 +14,14 @@ api_key = os.getenv("GEMINI_API_KEY")
 st.set_page_config(page_title="Pelacak Kalori AI", page_icon="🍏")
 st.title("🍏 Dashboard Pelacak Kalori AI")
 
-# --- FITUR BARU: Membuat "Ingatan" Sementara (Session State) ---
-# Streamlit selalu memuat ulang halaman dari atas ke bawah setiap kali tombol ditekan.
-# Session State digunakan agar data riwayat tidak hilang saat halaman dimuat ulang.
-if "riwayat_makanan" not in st.session_state:
-    st.session_state.riwayat_makanan = []
+# --- FITUR BARU: Hubungkan ke Google Sheets ---
+# Streamlit akan membaca URL Google Sheets dari konfigurasi rahasia nanti
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    # Membaca data yang sudah ada di Sheets
+    df_existing = conn.read(ttl="5m") # cache selama 5 menit agar hemat kuota
+except Exception as e:
+    df_existing = pd.DataFrame(columns=["Tanggal", "Makanan", "Kalori"])
 
 if not api_key:
     st.error("Peringatan: API Key tidak ditemukan. Pastikan file .env sudah dibuat dan diisi.")
@@ -24,11 +29,11 @@ else:
     client = genai.Client(api_key=api_key)
     
     st.write("Ceritakan apa yang baru saja Anda makan/minum dengan bahasa santai.")
-    user_input = st.text_area("Contoh: 'Tadi pagi aku makan nasi 150 gram, gorengan tahu 2...'", height=100)
+    user_input = st.text_area("Contoh: 'Tadi siang makan bakso seporsi sama es jeruk'", height=100)
     
-    if st.button("Analisis Kalori"):
+    if st.button("Analisis Kalori & Simpan"):
         if user_input:
-            with st.spinner("AI sedang menganalisis makanan Anda..."):
+            with st.spinner("AI sedang menganalisis dan menyimpan data..."):
                 prompt_instruksi = f"""
                 Kamu adalah ahli gizi. Pengguna akan memberikan teks santai tentang apa yang mereka makan.
                 Tugasmu adalah memperkirakan jumlah kalori total dari makanan tersebut.
@@ -36,8 +41,8 @@ else:
                 
                 Contoh output:
                 {{
-                    "makanan_terdeteksi": "Nasi Padang + Rendang",
-                    "estimasi_kalori": 850
+                    "makanan_terdeteksi": "Bakso Seporsi, Es Jeruk",
+                    "estimasi_kalori": 650
                 }}
                 
                 Teks pengguna: "{user_input}"
@@ -49,50 +54,57 @@ else:
                         contents=prompt_instruksi
                     )
                     
-                    # --- FITUR BARU: Membersihkan Data ---
-                    # Menghilangkan spasi ekstra di awal/akhir
                     raw_json = response.text.strip()
-                    
-                    # Mengubah teks JSON menjadi Dictionary Python agar angkanya bisa dihitung
                     data_kalori = json.loads(raw_json)
                     
-                    # Menyimpan data baru ke dalam "Ingatan" (Session State)
-                    st.session_state.riwayat_makanan.append({
+                    # --- FITUR BARU: Menyiapkan Baris Data Baru ---
+                    waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    new_row = pd.DataFrame([{
+                        "Tanggal": waktu_sekarang,
                         "Makanan": data_kalori["makanan_terdeteksi"],
-                        "Kalori": data_kalori["estimasi_kalori"]
-                    })
+                        "Kalori": int(data_kalori["estimasi_kalori"])
+                    }])
                     
-                    st.success("Berhasil ditambahkan!")
+                    # Menggabungkan data lama di Sheets dengan baris baru
+                    df_updated = pd.concat([df_existing, new_row], ignore_index=True)
                     
-                    # Menampilkan metrik kalori tunggal dengan desain UI yang lebih rapi
-                    st.metric(label="Kalori dari input terakhir", value=f"{data_kalori['estimasi_kalori']} kcal")
+                    # Menulis kembali seluruh data ke Google Sheets
+                    conn.update(data=df_updated)
+                    
+                    st.success("Berhasil dianalisis dan disimpan permanen ke Google Sheets!")
+                    st.metric(label="Kalori Terdeteksi", value=f"{data_kalori['estimasi_kalori']} kcal")
+                    
+                    # Memaksa halaman muat ulang agar tabel & grafik langsung terupdate
+                    st.rerun()
                     
                 except json.JSONDecodeError:
-                    st.error("Maaf, AI sedang bingung dan tidak memberikan format data yang benar. Coba ubah susunan kalimat Anda.")
+                    st.error("Format AI salah, coba ulangi input kalimat Anda.")
                 except Exception as e:
-                    st.error(f"Terjadi kesalahan jaringan/sistem: {e}")
+                    st.error(f"Gagal menyimpan ke Google Sheets: {e}")
         else:
-            st.warning("Silakan ketikkan makanan Anda terlebih dahulu sebelum menekan tombol.")
+            st.warning("Silakan ketikkan makanan Anda terlebih dahulu.")
     
-    # --- FITUR BARU: Menampilkan Grafik dan Tabel Riwayat ---
-    # Jika "Ingatan" sudah terisi minimal 1 data, maka tampilkan area riwayat ini
-    if len(st.session_state.riwayat_makanan) > 0:
-        st.divider() # Garis pembatas
-        st.subheader("📊 Ringkasan Hari Ini")
+    # --- FITUR BARU: Analitik & Dashboard Permanen ---
+    if not df_existing.empty:
+        st.divider()
+        st.subheader("📊 Analitik & Riwayat Makan Permanen")
         
-        # Mengubah data dari Session State menjadi format Tabel Pandas yang mudah diolah
-        df_riwayat = pd.DataFrame(st.session_state.riwayat_makanan)
+        # Konversi kolom kalori ke angka agar bisa dijumlahkan
+        df_existing["Kalori"] = pd.to_numeric(df_existing["Kalori"], errors='coerce').fillna(0)
         
-        # Menghitung total keseluruhan kalori di tabel
-        total_kalori_hari_ini = df_riwayat["Kalori"].sum()
+        total_kalori = df_existing["Kalori"].sum()
+        st.info(f"**Total Kalori yang Pernah Tercatat:** {int(total_kalori)} kcal")
         
-        # Menampilkan indikator total harian
-        st.info(f"**Total Kalori Sementara:** {total_kalori_hari_ini} kcal")
+        # Membuat Dua Kolom untuk Grafik dan Tabel agar Desainnya Bagus
+        col1, col2 = st.columns(2)
         
-        # Menampilkan grafik batang (Bar Chart)
-        # Sumbu X (bawah) akan mengambil kolom "Makanan"
-        st.bar_chart(df_riwayat.set_index("Makanan"))
-        
-        # Menampilkan tabel data mentahnya secara rapi
-        st.write("Detail Makanan:")
-        st.dataframe(df_riwayat, use_container_width=True)
+        with col1:
+            st.write("**Grafik Konsumsi:**")
+            # Menggunakan Tanggal dan Makanan sebagai sumbu grafik
+            df_chart = df_existing.copy()
+            df_chart['Label'] = df_chart['Tanggal'].str.slice(5, 10) + " - " + df_chart['Makanan']
+            st.bar_chart(df_chart.set_index('Label')['Kalori'])
+            
+        with col2:
+            st.write("**Tabel Data Konten:**")
+            st.dataframe(df_existing, use_container_width=True)
