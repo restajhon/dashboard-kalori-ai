@@ -109,7 +109,8 @@ elif menu == "Input Makanan":
                     for attempt in range(max_retries):
                         try:
                             response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_instruksi)
-                            data_kalori = json.loads(response.text.strip())
+                            teks_bersih = response.text.strip().replace("```json", "").replace("```", "").strip()
+                            data_kalori = json.loads(teks_bersih)
                             
                             waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M")
                             new_row = pd.DataFrame([{"Tanggal": waktu_sekarang, "Makanan": data_kalori["makanan_terdeteksi"], "Kalori": int(data_kalori["estimasi_kalori"])}])
