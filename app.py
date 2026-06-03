@@ -172,8 +172,7 @@ elif menu_pilihan == "Input Makanan":
                             )
                             
                             # Membersihkan dan membaca format JSON dari AI
-                            teks_bersih = response.text.replace('```json', '').replace('
-```', '').strip()
+                            teks_bersih = response.text.replace('```json', '').replace('```', '').strip()
                             data_nutrisi = json.loads(teks_bersih)
                             
                             kalori = int(data_nutrisi.get("kalori", 0))
