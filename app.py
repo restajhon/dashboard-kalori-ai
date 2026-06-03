@@ -95,25 +95,44 @@ elif menu == "Input Makanan":
         
         if st.button("Analisis & Simpan"):
             if user_input:
+                # Tambahkan library time di bagian paling atas app.py jika belum ada: import time
+                import time 
+                
                 with st.spinner("AI sedang memproses data..."):
                     prompt_instruksi = f"""
                     Kamu adalah ahli gizi. Keluarkan jawaban HANYA dalam format JSON.
                     Contoh: {{"makanan_terdeteksi": "Nasi Padang Rendang", "estimasi_kalori": 750}}
                     Teks pengguna: "{user_input}"
                     """
-                    try:
-                        response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_instruksi)
-                        data_kalori = json.loads(response.text.strip())
-                        
-                        waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M")
-                        new_row = pd.DataFrame([{"Tanggal": waktu_sekarang, "Makanan": data_kalori["makanan_terdeteksi"], "Kalori": int(data_kalori["estimasi_kalori"])}])
-                        df_updated = pd.concat([df_existing, new_row], ignore_index=True)
-                        
-                        conn.update(data=df_updated)
-                        st.success(f"Berhasil disimpan! ({data_kalori['estimasi_kalori']} kcal)")
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Terjadi kesalahan: {e}")
+                    
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_instruksi)
+                            data_kalori = json.loads(response.text.strip())
+                            
+                            waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M")
+                            new_row = pd.DataFrame([{"Tanggal": waktu_sekarang, "Makanan": data_kalori["makanan_terdeteksi"], "Kalori": int(data_kalori["estimasi_kalori"])}])
+                            df_updated = pd.concat([df_existing, new_row], ignore_index=True)
+                            
+                            conn.update(data=df_updated)
+                            st.success(f"Berhasil disimpan! ({data_kalori['estimasi_kalori']} kcal)")
+                            
+                            time.sleep(1) # Beri jeda sedikit sebelum refresh
+                            st.rerun()
+                            break # Keluar dari loop jika berhasil
+                            
+                        except Exception as e:
+                            # Jika errornya adalah 503 (High Demand)
+                            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                                if attempt < max_retries - 1:
+                                    st.warning(f"Server AI sedang penuh. Mencoba ulang otomatis ({attempt + 1}/{max_retries})... ⏳")
+                                    time.sleep(3) # Tunggu 3 detik sebelum mencoba lagi
+                                else:
+                                    st.error("Waduh, servernya masih sibuk nih. Boleh tolong coba lagi dalam beberapa menit? 🙏")
+                            else:
+                                # Jika errornya karena format JSON atau hal lain
+                                st.error(f"Terjadi kesalahan sistem: {e}")
+                                break
             else:
                 st.warning("Kolom input tidak boleh kosong!")
