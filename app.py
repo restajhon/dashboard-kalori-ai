@@ -18,8 +18,9 @@ st.title("🍏 Dashboard Pelacak Kalori AI")
 # Streamlit akan membaca URL Google Sheets dari konfigurasi rahasia nanti
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Membaca data yang sudah ada di Sheets
-    df_existing = conn.read(ttl="5m") # cache selama 5 menit agar hemat kuota
+    # ttl=0 artinya JANGAN gunakan memori sementara (selalu baca data real-time)
+    # .dropna(...) digunakan agar baris kosong di Google Sheets tidak ikut terbaca
+    df_existing = conn.read(ttl=0).dropna(subset=["Makanan"])
 except Exception as e:
     df_existing = pd.DataFrame(columns=["Tanggal", "Makanan", "Kalori"])
 
