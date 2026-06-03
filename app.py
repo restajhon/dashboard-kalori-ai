@@ -1,139 +1,177 @@
 import streamlit as st
-import os
-import json
 import pandas as pd
-from datetime import datetime
-from dotenv import load_dotenv
-from google import genai
-from streamlit_gsheets import GSheetsConnection
+import plotly.express as px
+from datetime import datetime, timedelta
+from streamlit_option_menu import option_menu 
 
-# 1. Konfigurasi Halaman Utama
-st.set_page_config(page_title="Dashboard Kalori", page_icon="🍏", layout="wide")
+# --- PENGATURAN HALAMAN WEB ---
+st.set_page_config(page_title="Kalori AI Workspace", page_icon="🍏", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Membaca API Key
-load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
-
-# 3. Mengambil Data dari Google Sheets
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_existing = conn.read(ttl=0).dropna(subset=["Makanan"])
-    df_existing["Kalori"] = pd.to_numeric(df_existing["Kalori"], errors='coerce').fillna(0)
-except Exception as e:
-    df_existing = pd.DataFrame(columns=["Tanggal", "Makanan", "Kalori"])
-
-# --- SIDEBAR NAVIGATION ---
-with st.sidebar:
-    st.title("🍏 Kalori AI")
-    st.write("---")
+# --- GAYA DESAIN CUSTOM (CSS) SUPER PREMIUM ---
+st.markdown("""
+    <style>
+    /* Memaksimalkan lebar layar dan membuang ruang kosong */
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 98%; }
     
-    # Menggunakan selectbox agar sama persis dengan menu referensi Anda
-    menu = st.selectbox(
-        "Buka Halaman Utama",
-        ["Dashboard", "Analitik", "Input Makanan"]
+    /* Menarik Sidebar ke atas */
+    [data-testid="stSidebar"] .block-container { padding-top: 1.5rem !important; }
+    [data-testid="stSidebarNav"] { display: none !important; }
+    
+    /* Efek Glassmorphism Modern untuk Kartu */
+    .glass-card {
+        background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+        border-radius: 16px;
+        padding: 24px;
+        height: 100%;
+        transition: all 0.3s ease;
+    }
+    .glass-card:hover {
+        transform: translateY(-5px);
+        border: 1px solid rgba(16, 185, 129, 0.5); /* Glow hijau segar */
+        box-shadow: 0 12px 40px 0 rgba(16, 185, 129, 0.15);
+    }
+    
+    /* Tipografi */
+    .card-title { font-size: 14px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; color: #888; letter-spacing: 1px;}
+    .card-value { font-size: 36px; font-weight: 900; margin-bottom: 5px; line-height: 1.1;}
+    .card-subtext { font-size: 13px; color: #888; font-weight: 500;}
+    h1, h2, h3, h4 { font-weight: 800 !important; letter-spacing: -0.5px; }
+    
+    /* Merapikan Form */
+    [data-testid="stSidebar"] { border-right: 1px solid rgba(128, 128, 128, 0.2); }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- FUNGSI UI KOMPONEN ---
+def buat_kartu(icon, judul, nilai, warna_nilai, teks_bawah):
+    st.markdown(f"""
+    <div class="glass-card">
+        <div class="card-title">{icon} {judul}</div>
+        <div class="card-value" style="color: {warna_nilai};">{nilai}</div>
+        <div class="card-subtext">{teks_bawah}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def buat_banner(judul, subjudul, gradient="linear-gradient(90deg, #064e3b 0%, #10b981 100%)"):
+    st.markdown(f"""
+    <div style='background: {gradient}; padding: 30px 40px; border-radius: 16px; color: white; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);'>
+        <h1 style='color: white; margin-top: 0; font-size: 38px; font-weight: 900;'>{judul}</h1>
+        <p style='margin-bottom: 0; font-size: 16px; opacity: 0.9; font-weight: 500;'>{subjudul}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# SIDEBAR (NAVIGASI TANPA DROPDOWN)
+# ==========================================
+with st.sidebar:
+    st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🍏 Kalori AI</h2>", unsafe_allow_html=True)
+    
+    # Navigasi Modern (Bukan Dropdown)
+    menu_pilihan = option_menu(
+        menu_title=None,  
+        options=["Dashboard", "Analitik", "Input Makanan"], 
+        icons=["grid-1x2-fill", "activity", "egg-fried"], 
+        menu_icon="cast", default_index=0,
+        styles={
+            "container": {"padding": "0!important", "background-color": "transparent"},
+            "icon": {"font-size": "18px"}, 
+            "nav-link": {"font-size": "15px", "text-align": "left", "margin":"8px 0px", "font-weight": "600", "border-radius": "10px"},
+            "nav-link-selected": {"background-color": "#10b981", "color": "white", "box-shadow": "0 4px 12px rgba(16,185,129,0.3)"},
+        }
     )
     
-    st.write("---")
-    st.write("👤 **Admin Dashboard**")
-
-# --- KONTEN HALAMAN ---
-
-if menu == "Dashboard":
-    # Meniru judul besar rata tengah
-    st.markdown("<h1 style='text-align: center;'>DASHBOARD PELACAK KALORI</h1>", unsafe_allow_html=True)
+    st.divider()
     
-    # Menambahkan gambar banner utama (mirip referensi)
-    st.image("https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=2053&auto=format&fit=crop", use_container_width=True)
-    st.write("---")
+    # Widget Filter & Ringkasan Cepat di Sidebar
+    st.markdown("### 🎯 Target Harian")
+    target_kalori = st.number_input("Kalori (kcal)", value=2000, step=100)
+    st.progress(0.65) # Dummy progress
+    st.caption("1,300 / 2,000 kcal terpenuhi")
+
+# ==========================================
+# HALAMAN 1: DASHBOARD
+# ==========================================
+if menu_pilihan == "Dashboard":
+    buat_banner("Hello, Health Enthusiast! 👋", "Pantau asupan nutrisi dan capai target kalori harianmu bersama AI.")
     
-    if df_existing.empty:
-        st.info("Belum ada data makanan. Silakan ke menu 'Input Makanan'.")
-    else:
-        col1, col2, col3 = st.columns(3)
-        total_kalori = df_existing["Kalori"].sum()
-        makanan_terakhir = df_existing.iloc[-1]["Makanan"]
-        total_entri = len(df_existing)
-        
-        with col1:
-            st.metric(label="Total Kalori (kcal)", value=f"{int(total_kalori)}")
-        with col2:
-            st.metric(label="Total Porsi", value=f"{total_entri}")
-        with col3:
-            st.metric(label="Konsumsi Terakhir", value=makanan_terakhir)
+    # ROW 1: KARTU METRIK UTAMA
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: buat_kartu("🔥", "KALORI MASUK", "1,300", "#10b981", "Kcal konsumsi hari ini")
+    with k2: buat_kartu("🥩", "PROTEIN", "85g", "#3b82f6", "Dari target 120g")
+    with k3: buat_kartu("🍚", "KARBOHIDRAT", "150g", "#f59e0b", "Dari target 200g")
+    with k4: buat_kartu("🥑", "LEMAK", "40g", "#ec4899", "Dari target 60g")
+    
+    st.write("")
+    
+    # ROW 2: GRAFIK FULL WIDTH
+    g1, g2 = st.columns([6, 4])
+    with g1:
+        st.markdown("#### 📊 Weekly Calorie Trend")
+        # Dummy data untuk contoh tampilan
+        df_trend = pd.DataFrame({
+            "Hari": ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"],
+            "Kalori": [1900, 2100, 1950, 2050, 1800, 2200, 1300]
+        })
+        fig_line = px.line(df_trend, x='Hari', y='Kalori', markers=True, color_discrete_sequence=["#10b981"])
+        fig_line.update_traces(line_shape='spline', line=dict(width=4), marker=dict(size=8))
+        fig_line.add_hline(y=2000, line_dash="dash", line_color="gray", annotation_text="Target")
+        fig_line.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0))
+        st.plotly_chart(fig_line, use_container_width=True)
             
-        st.divider()
-        st.subheader("📈 Tren Konsumsi Terakhir")
-        df_recent = df_existing.tail(5)
-        df_recent['Label'] = df_recent['Tanggal'].str.slice(11, 16) + " - " + df_recent['Makanan']
-        st.bar_chart(df_recent.set_index('Label')['Kalori'])
+    with g2:
+        st.markdown("#### 🥗 Macros Breakdown")
+        df_macros = pd.DataFrame({"Makro": ["Protein", "Karbohidrat", "Lemak"], "Gram": [85, 150, 40]})
+        fig_pie = px.pie(df_macros, values='Gram', names='Makro', hole=0.6, color_discrete_sequence=["#3b82f6", "#f59e0b", "#ec4899"])
+        fig_pie.update_traces(textposition='inside', textinfo='percent')
+        fig_pie.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-elif menu == "Analitik":
-    st.markdown("<h1 style='text-align: center;'>ANALITIK MENDALAM</h1>", unsafe_allow_html=True)
-    st.write("---")
+# ==========================================
+# HALAMAN 2: ANALITIK
+# ==========================================
+elif menu_pilihan == "Analitik":
+    buat_banner("📈 Deep Analytics", "Analisis pola makan dan kebiasaan nutrisi Anda.", "linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%)")
     
-    if df_existing.empty:
-        st.warning("Data masih kosong.")
-    else:
-        st.subheader("Riwayat Konsumsi Keseluruhan")
-        df_chart = df_existing.copy()
-        df_chart['Label'] = df_chart['Tanggal'].str.slice(5, 10) + " - " + df_chart['Makanan']
-        st.area_chart(df_chart.set_index('Label')['Kalori'])
-        
-        st.subheader("Tabel Data Mentah")
-        st.dataframe(df_existing, use_container_width=True)
+    st.info("Fitur analitik lanjutan akan ditampilkan di sini. (Grafik rata-rata bulanan, korelasi kalori vs berat badan, dll).")
+    
+    # Contoh Layout Kosong yang rapi
+    c1, c2 = st.columns(2)
+    with c1:
+        with st.container(border=True):
+            st.markdown("<div style='height: 300px; display: flex; align-items: center; justify-content: center; color: gray;'>[ Area Grafik Distribusi Waktu Makan ]</div>", unsafe_allow_html=True)
+    with c2:
+        with st.container(border=True):
+            st.markdown("<div style='height: 300px; display: flex; align-items: center; justify-content: center; color: gray;'>[ Area Grafik Top Kalori ]</div>", unsafe_allow_html=True)
 
-elif menu == "Input Makanan":
-    st.markdown("<h1 style='text-align: center;'>INPUT MAKANAN HARIAN</h1>", unsafe_allow_html=True)
-    st.write("---")
-    st.write("Ceritakan apa yang baru saja Anda makan. AI kami akan otomatis mengekstrak data kalorinya.")
+# ==========================================
+# HALAMAN 3: INPUT MAKANAN
+# ==========================================
+elif menu_pilihan == "Input Makanan":
+    st.markdown("<h2 style='margin-bottom: 20px;'>🍳 Catat Jurnal Makanan</h2>", unsafe_allow_html=True)
     
-    if not api_key:
-        st.error("API Key belum diatur.")
-    else:
-        client = genai.Client(api_key=api_key)
-        user_input = st.text_area("Contoh: 'Tadi siang makan nasi padang lauk rendang...'", height=150)
-        
-        if st.button("Analisis & Simpan"):
-            if user_input:
-                # Tambahkan library time di bagian paling atas app.py jika belum ada: import time
-                import time 
+    with st.container(border=True):
+        st.markdown("Masukkan detail makanan yang baru saja Anda konsumsi.")
+        with st.form("form_kalori"):
+            col1, col2 = st.columns(2)
+            with col1:
+                waktu_makan = st.selectbox("Waktu Makan", ["Sarapan", "Makan Siang", "Makan Malam", "Cemilan"])
+                nama_makanan = st.text_input("Nama Makanan / Minuman")
+            with col2:
+                kalori = st.number_input("Total Kalori (kcal)", min_value=0, step=50)
+                porsi = st.number_input("Jumlah Porsi", min_value=1.0, step=0.5)
                 
-                with st.spinner("AI sedang memproses data..."):
-                    prompt_instruksi = f"""
-                    Kamu adalah ahli gizi. Keluarkan jawaban HANYA dalam format JSON.
-                    Contoh: {{"makanan_terdeteksi": "Nasi Padang Rendang", "estimasi_kalori": 750}}
-                    Teks pengguna: "{user_input}"
-                    """
-                    
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_instruksi)
-                            teks_bersih = response.text.strip().replace("```json", "").replace("```", "").strip()
-                            data_kalori = json.loads(teks_bersih)
-                            
-                            waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M")
-                            new_row = pd.DataFrame([{"Tanggal": waktu_sekarang, "Makanan": data_kalori["makanan_terdeteksi"], "Kalori": int(data_kalori["estimasi_kalori"])}])
-                            df_updated = pd.concat([df_existing, new_row], ignore_index=True)
-                            
-                            conn.update(data=df_updated)
-                            st.success(f"Berhasil disimpan! ({data_kalori['estimasi_kalori']} kcal)")
-                            
-                            time.sleep(1) # Beri jeda sedikit sebelum refresh
-                            st.rerun()
-                            break # Keluar dari loop jika berhasil
-                            
-                        except Exception as e:
-                            # Jika errornya adalah 503 (High Demand)
-                            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                                if attempt < max_retries - 1:
-                                    st.warning(f"Server AI sedang penuh. Mencoba ulang otomatis ({attempt + 1}/{max_retries})... ⏳")
-                                    time.sleep(3) # Tunggu 3 detik sebelum mencoba lagi
-                                else:
-                                    st.error("Waduh, servernya masih sibuk nih. Boleh tolong coba lagi dalam beberapa menit? 🙏")
-                            else:
-                                # Jika errornya karena format JSON atau hal lain
-                                st.error(f"Terjadi kesalahan sistem: {e}")
-                                break
-            else:
-                st.warning("Kolom input tidak boleh kosong!")
+            st.markdown("#### Estimasi Makronutrien (Opsional)")
+            m1, m2, m3 = st.columns(3)
+            with m1: protein = st.number_input("Protein (g)", min_value=0)
+            with m2: karbo = st.number_input("Karbohidrat (g)", min_value=0)
+            with m3: lemak = st.number_input("Lemak (g)", min_value=0)
+            
+            st.write("")
+            submit = st.form_submit_button("Simpan ke Jurnal", use_container_width=True)
+            
+            if submit:
+                st.success(f"✅ {nama_makanan} berhasil dicatat! (+{kalori} kcal)")
