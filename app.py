@@ -93,9 +93,6 @@ with st.sidebar:
     st.progress(persen_kalori)
     st.caption(f"{kalori_hari_ini:,.0f} / {target_kalori:,.0f} kcal terpenuhi")
 
-# Palet Warna Grafik
-CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6"]
-
 # ==========================================
 # HALAMAN 1: DASHBOARD
 # ==========================================
@@ -136,17 +133,28 @@ if menu_pilihan == "Dashboard":
             st.plotly_chart(fig_pie, use_container_width=True)
         else: st.info("Belum ada asupan hari ini.")
 
-    # --- FITUR BARU: TABEL RIWAYAT MAKANAN + FILTER DI DASHBOARD ---
+    # --- FITUR TABEL RIWAYAT MAKANAN SEPERTI GAMBAR ---
     st.write("")
-    st.markdown("#### 📋 Jurnal Konsumsi Makanan")
+    st.markdown("#### 📋 History Konsumsi Makanan")
     
     if not df.empty:
-        # Pilihan filter sesuai request
-        filter_tabel = st.selectbox("Pilih Periode Riwayat Makanan:", 
-            ["Hari Ini", "Minggu Ini", "Bulan Ini", "3 Bulan Terakhir", "6 Bulan Terakhir", "Tahun Ini", "Semua Waktu"],
-            index=2, key="dashboard_table_time_filter"
-        )
+        # Meniru desain filter berdampingan dari referensi gambar
+        col_f1, col_f2 = st.columns(2)
         
+        with col_f1:
+            filter_tabel = st.selectbox("Filter Periode:", 
+                ["Hari Ini", "Minggu Ini", "Bulan Ini", "3 Bulan Terakhir", "6 Bulan Terakhir", "Tahun Ini", "Semua Waktu"],
+                index=2, key="dash_time"
+            )
+            
+        with col_f2:
+            pil_waktu = st.multiselect("Filter Waktu Makan:", 
+                ["Sarapan", "Makan Siang", "Makan Malam", "Cemilan"], 
+                default=["Sarapan", "Makan Siang", "Makan Malam", "Cemilan"], 
+                key="dash_waktu"
+            )
+        
+        # Logika filter waktu
         hari_ini_tabel = datetime.today().date()
         if filter_tabel == "Hari Ini": start_date_tabel = hari_ini_tabel
         elif filter_tabel == "Minggu Ini": start_date_tabel = hari_ini_tabel - timedelta(days=hari_ini_tabel.weekday())
@@ -156,10 +164,13 @@ if menu_pilihan == "Dashboard":
         elif filter_tabel == "Tahun Ini": start_date_tabel = hari_ini_tabel.replace(month=1, day=1)
         else: start_date_tabel = hari_ini_tabel - timedelta(days=3650)
         
-        # Proses filtering data khusus tabel dashboard
-        df_tabel_dash = df[(df['Tanggal'] >= start_date_tabel) & (df['Tanggal'] <= hari_ini_tabel)]
+        # Terapkan filter Waktu Makan & Periode ke Dataframe
+        df_tabel_dash = df[(df['Tanggal'] >= start_date_tabel) & 
+                           (df['Tanggal'] <= hari_ini_tabel) & 
+                           (df['Waktu'].isin(pil_waktu))]
         
-        st.dataframe(df_tabel_dash.iloc[::-1], use_container_width=True, hide_index=True, height=250)
+        # Tampilkan DataFrame
+        st.dataframe(df_tabel_dash.iloc[::-1], use_container_width=True, hide_index=True)
     else:
         st.info("Belum ada riwayat jurnal makanan untuk ditampilkan.")
 
