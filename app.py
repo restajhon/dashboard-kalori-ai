@@ -63,14 +63,13 @@ def buat_banner(judul, subjudul, gradient="linear-gradient(90deg, #064e3b 0%, #1
     """, unsafe_allow_html=True)
 
 # ==========================================
-# SIDEBAR NAVIGATION TERBARU
+# SIDEBAR NAVIGATION
 # ==========================================
 with st.sidebar:
     st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🍏 Kalori AI</h2>", unsafe_allow_html=True)
     menu_pilihan = option_menu(
         menu_title=None,  
         options=["Dashboard", "Analitik Nutrisi", "Analitik Kebugaran", "Input Makanan", "Input Kegiatan"], 
-        # Update Icon agar tidak error dan kompatibel:
         icons=["grid-1x2-fill", "pie-chart-fill", "activity", "egg-fried", "lightning-fill"], 
         menu_icon="cast", default_index=0,
         styles={
@@ -283,7 +282,12 @@ elif menu_pilihan == "Input Makanan":
     buat_banner("✨ Jurnal Pintar Makanan AI", "Cukup ketik apa yang Anda makan, biarkan Gemini AI menghitung nutrisinya!", "linear-gradient(90deg, #8b5cf6 0%, #a855f7 100%)")
     with st.container(border=True):
         with st.form("form_ai", clear_on_submit=True):
-            waktu_makan = st.selectbox("Waktu Makan", ["Sarapan", "Makan Siang", "Makan Malam", "Cemilan"])
+            col_t1, col_w1 = st.columns(2)
+            with col_t1: 
+                tanggal_makan = st.date_input("Tanggal", datetime.today(), key="tgl_makan")
+            with col_w1: 
+                waktu_makan = st.selectbox("Waktu Makan", ["Sarapan", "Makan Siang", "Makan Malam", "Cemilan"])
+                
             makanan_input = st.text_input("Apa yang Anda makan? (Sertakan porsinya)", placeholder="Contoh: 1 porsi dada ayam panggang dan nasi merah")
             submit_ai = st.form_submit_button("🧠 Hitung & Simpan Makanan", use_container_width=True)
             
@@ -293,7 +297,8 @@ elif menu_pilihan == "Input Makanan":
                         client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
                         prompt = f"Anda adalah ahli gizi. Berikan estimasi total nutrisi untuk porsi makanan ini: '{makanan_input}'. Balas HANYA dengan format JSON persis seperti ini: {{\"kalori\": 0, \"protein\": 0, \"karbohidrat\": 0, \"lemak\": 0}}"
                         response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-                        teks_bersih = response.text.replace('```json', '').replace('```', '').strip()
+                        teks_bersih = response.text.replace('```json', '').replace('
+```', '').strip()
                         data_nutrisi = json.loads(teks_bersih)
                         
                         kalori = int(data_nutrisi.get("kalori", 0))
@@ -301,8 +306,9 @@ elif menu_pilihan == "Input Makanan":
                         karbo = int(data_nutrisi.get("karbohidrat", 0))
                         lemak = int(data_nutrisi.get("lemak", 0))
                         
-                        worksheet.append_row([datetime.today().strftime("%Y-%m-%d"), waktu_makan, makanan_input, kalori, protein, karbo, lemak])
-                        st.success(f"✅ Berhasil dicatat ke database!")
+                        # Simpan dengan tanggal yang dipilih user
+                        worksheet.append_row([tanggal_makan.strftime("%Y-%m-%d"), waktu_makan, makanan_input, kalori, protein, karbo, lemak])
+                        st.success(f"✅ Berhasil dicatat ke database untuk tanggal {tanggal_makan.strftime('%d %b %Y')}!")
                         st.balloons()
                     except Exception as e: st.error(f"Gagal menganalisis. Error: {e}")
 
@@ -313,7 +319,12 @@ elif menu_pilihan == "Input Kegiatan":
     buat_banner("✨ Jurnal Pintar Kebugaran AI", "Cukup ketik aktivitas latihan atau gym Anda, biarkan Gemini AI memprediksi kalori terbakar!", "linear-gradient(90deg, #db2777 0%, #f43f5e 100%)")
     with st.container(border=True):
         with st.form("form_kegiatan_ai", clear_on_submit=True):
-            waktu_kegiatan = st.selectbox("Waktu Latihan", ["Pagi", "Siang", "Sore", "Malam"])
+            col_t2, col_w2 = st.columns(2)
+            with col_t2: 
+                tanggal_kegiatan = st.date_input("Tanggal Latihan", datetime.today(), key="tgl_keg")
+            with col_w2: 
+                waktu_kegiatan = st.selectbox("Waktu Latihan", ["Pagi", "Siang", "Sore", "Malam"])
+                
             kegiatan_input = st.text_input("Aktivitas gym / olahraga apa yang kamu lakukan?", placeholder="Contoh: Angkat beban dada (chest press) 45 menit, atau Lari treadmill speed 9 selama 25 menit")
             submit_keg_ai = st.form_submit_button("🏃‍♂️ Hitung & Simpan Aktivitas", use_container_width=True)
             
@@ -328,7 +339,8 @@ elif menu_pilihan == "Input Kegiatan":
                         
                         kalori_burn = int(data_kegiatan.get("kalori", 0))
                         
-                        worksheet_kegiatan.append_row([datetime.today().strftime("%Y-%m-%d"), waktu_kegiatan, kegiatan_input, kalori_burn])
-                        st.success(f"🔥 Luar biasa! Berhasil dicatat: **{kegiatan_input}** terbakar sekitar **{kalori_burn} Kcal**")
+                        # Simpan dengan tanggal yang dipilih user
+                        worksheet_kegiatan.append_row([tanggal_kegiatan.strftime("%Y-%m-%d"), waktu_kegiatan, kegiatan_input, kalori_burn])
+                        st.success(f"🔥 Luar biasa! Berhasil dicatat untuk tanggal {tanggal_kegiatan.strftime('%d %b %Y')}: **{kegiatan_input}** terbakar sekitar **{kalori_burn} Kcal**")
                         st.snow()
                     except Exception as e: st.error(f"Gagal menghitung kalori aktivitas. Error: {e}")
