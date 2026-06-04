@@ -23,7 +23,8 @@ ws_kegiatan = sheet_file.worksheet("Kegiatan")
 
 # --- FUNGSI KEAMANAN & AUTH ---
 def hash_pass(password):
-    return hashlib.sha256(str.encode(password)).hexdigest()
+    # Kita tambahkan kata "SECURE_" agar Google Sheets tidak merusak format teksnya
+    return "SECURE_" + hashlib.sha256(str.encode(password)).hexdigest()
 
 def check_login(username, password):
     users_data = ws_users.get_all_records()
