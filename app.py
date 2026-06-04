@@ -23,21 +23,36 @@ ws_kegiatan = sheet_file.worksheet("Kegiatan")
 
 # --- FUNGSI KEAMANAN & AUTH ---
 def hash_pass(password):
-    # Kita tambahkan kata "SECURE_" agar Google Sheets tidak merusak format teksnya
-    return "SECURE_" + hashlib.sha256(str.encode(password)).hexdigest()
+    # Memastikan tidak ada spasi tak terlihat sebelum enkripsi
+    password_bersih = str(password).strip()
+    return "SECURE_" + hashlib.sha256(str.encode(password_bersih)).hexdigest()
 
 def check_login(username, password):
     users_data = ws_users.get_all_records()
+    
+    # Membersihkan input dari spasi yang tidak sengaja terketik
+    input_u = str(username).strip()
+    input_p = str(password).strip()
+    
     for user in users_data:
-        if str(user.get('Username', '')) == username and str(user.get('Password', '')) == hash_pass(password):
-            return user.get('Name', 'User')
+        # Membersihkan data yang ditarik dari Google Sheets
+        sheet_u = str(user.get('Username', '')).strip()
+        sheet_p = str(user.get('Password', '')).strip()
+        
+        if sheet_u == input_u and sheet_p == hash_pass(input_p):
+            return str(user.get('Name', 'User')).strip()
     return None
 
 def signup_user(username, password, name):
     users_data = ws_users.get_all_records()
-    if any(str(u.get('Username', '')) == username for u in users_data):
+    input_u = str(username).strip()
+    input_p = str(password).strip()
+    input_n = str(name).strip()
+    
+    if any(str(u.get('Username', '')).strip() == input_u for u in users_data):
         return False
-    ws_users.append_row([username, hash_pass(password), name])
+        
+    ws_users.append_row([input_u, hash_pass(input_p), input_n])
     return True
 
 # --- SESSION STATE UNTUK LOGIN ---
