@@ -76,13 +76,12 @@ with st.sidebar:
     st.markdown("### 🎯 Target Harian")
     target_kalori = st.number_input("Kalori (kcal)", value=2000, step=100)
     
-    # Menarik Data
+    # Ambil data global
     data_semua = worksheet.get_all_records()
     df = pd.DataFrame(data_semua) if len(data_semua) > 0 else pd.DataFrame()
     kalori_hari_ini = 0
     
     if not df.empty:
-        # Konversi format data yang benar
         df['Tanggal'] = pd.to_datetime(df['Tanggal']).dt.date
         df['Kalori'] = pd.to_numeric(df['Kalori'])
         df['Protein'] = pd.to_numeric(df['Protein'])
@@ -94,7 +93,7 @@ with st.sidebar:
     st.progress(persen_kalori)
     st.caption(f"{kalori_hari_ini:,.0f} / {target_kalori:,.0f} kcal terpenuhi")
 
-# Palet Warna Keren untuk Grafik
+# Palet Warna Grafik
 CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6"]
 
 # ==========================================
@@ -137,28 +136,50 @@ if menu_pilihan == "Dashboard":
             st.plotly_chart(fig_pie, use_container_width=True)
         else: st.info("Belum ada asupan hari ini.")
 
+    # --- FITUR BARU: TABEL RIWAYAT MAKANAN + FILTER DI DASHBOARD ---
+    st.write("")
+    st.markdown("#### 📋 Jurnal Konsumsi Makanan")
+    
+    if not df.empty:
+        # Pilihan filter sesuai request
+        filter_tabel = st.selectbox("Pilih Periode Riwayat Makanan:", 
+            ["Hari Ini", "Minggu Ini", "Bulan Ini", "3 Bulan Terakhir", "6 Bulan Terakhir", "Tahun Ini", "Semua Waktu"],
+            index=2, key="dashboard_table_time_filter"
+        )
+        
+        hari_ini_tabel = datetime.today().date()
+        if filter_tabel == "Hari Ini": start_date_tabel = hari_ini_tabel
+        elif filter_tabel == "Minggu Ini": start_date_tabel = hari_ini_tabel - timedelta(days=hari_ini_tabel.weekday())
+        elif filter_tabel == "Bulan Ini": start_date_tabel = hari_ini_tabel.replace(day=1)
+        elif filter_tabel == "3 Bulan Terakhir": start_date_tabel = hari_ini_tabel - timedelta(days=90)
+        elif filter_tabel == "6 Bulan Terakhir": start_date_tabel = hari_ini_tabel - timedelta(days=180)
+        elif filter_tabel == "Tahun Ini": start_date_tabel = hari_ini_tabel.replace(month=1, day=1)
+        else: start_date_tabel = hari_ini_tabel - timedelta(days=3650)
+        
+        # Proses filtering data khusus tabel dashboard
+        df_tabel_dash = df[(df['Tanggal'] >= start_date_tabel) & (df['Tanggal'] <= hari_ini_tabel)]
+        
+        st.dataframe(df_tabel_dash.iloc[::-1], use_container_width=True, hide_index=True, height=250)
+    else:
+        st.info("Belum ada riwayat jurnal makanan untuk ditampilkan.")
+
 # ==========================================
-# HALAMAN 2: ANALITIK (FULL UPDATE)
+# HALAMAN 2: ANALITIK
 # ==========================================
 elif menu_pilihan == "Analitik":
     buat_banner("📈 Deep Analytics", "Analisis pola makan, konsistensi target, dan kebiasaan nutrisi Anda.", "linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%)")
     
     if not df.empty:
-        # --- PERSIAPAN DATA HARIAN ---
         df_daily = df.groupby('Tanggal')['Kalori'].sum().reset_index()
-        # Menentukan Status Keberhasilan (Under target = Tercapai, Over target = Gagal)
         df_daily['Status'] = df_daily['Kalori'].apply(lambda x: 'Tercapai' if x <= target_kalori else 'Melebihi Target')
         
-        # Hitung Win Rate & Streak
         win_rate = (len(df_daily[df_daily['Status'] == 'Tercapai']) / len(df_daily)) * 100
-        
         streak_saat_ini = 0
         df_daily_sorted = df_daily.sort_values('Tanggal', ascending=False)
         for stat in df_daily_sorted['Status']:
             if stat == 'Tercapai': streak_saat_ini += 1
             else: break
                 
-        # --- ROW 1: KONSISTENSI & STREAK TRACKER ---
         st.markdown("### 🏆 Consistency Target & Streak")
         c1, c2 = st.columns([1, 2.5])
         with c1:
@@ -169,24 +190,18 @@ elif menu_pilihan == "Analitik":
         with c2:
             with st.container():
                 st.markdown("**📅 Daily Calorie Heatmap**")
-                # Menggunakan Bar Chart dengan Pewarnaan Kondisional sebagai ganti Heatmap agar lebih intuitif
-                fig_cal = px.bar(df_daily, x='Tanggal', y='Kalori', color='Status',
-                                 color_discrete_map={'Tercapai': '#10b981', 'Melebihi Target': '#ef4444'})
+                fig_cal = px.bar(df_daily, x='Tanggal', y='Kalori', color='Status', color_discrete_map={'Tercapai': '#10b981', 'Melebihi Target': '#ef4444'})
                 fig_cal.add_hline(y=target_kalori, line_dash="dash", line_color="gray", annotation_text="Batas Target")
                 fig_cal.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0))
                 st.plotly_chart(fig_cal, use_container_width=True)
 
         st.divider()
-
-        # --- ROW 2: MEAL TIMING & TOP 5 FOODS ---
         col_m1, col_m2 = st.columns(2)
-        
         with col_m1:
             st.markdown("### 🕒 Meal Timing Distribution")
             st.caption("Porsi kalori berdasarkan waktu makan")
             df_waktu = df.groupby('Waktu')['Kalori'].sum().reset_index()
-            fig_timing = px.pie(df_waktu, values='Kalori', names='Waktu', hole=0.5, 
-                                color_discrete_sequence=["#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899"])
+            fig_timing = px.pie(df_waktu, values='Kalori', names='Waktu', hole=0.5, color_discrete_sequence=["#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899"])
             fig_timing.update_traces(textposition='inside', textinfo='percent+label')
             fig_timing.update_layout(height=350, margin=dict(l=0, r=0, t=20, b=0), showlegend=False)
             st.plotly_chart(fig_timing, use_container_width=True)
@@ -194,36 +209,24 @@ elif menu_pilihan == "Analitik":
         with col_m2:
             st.markdown("### 🔥 Top 5 Burner Foods")
             st.caption("Makanan paling sering dikonsumsi")
-            # Menghitung Frekuensi dan Rata-rata Kalori per Makanan
             df_top = df.groupby('Makanan').agg(Frekuensi=('Makanan', 'count'), Total_Kalori=('Kalori', 'sum')).reset_index()
             df_top['Rata_Kalori'] = df_top['Total_Kalori'] / df_top['Frekuensi']
-            
-            # Mengambil 5 Teratas berdasarkan seberapa sering dimakan, diurutkan untuk grafik horizontal
             df_top5 = df_top.nlargest(5, 'Frekuensi').sort_values('Frekuensi', ascending=True)
             
-            fig_top = px.bar(df_top5, x='Frekuensi', y='Makanan', orientation='h', 
-                             text=df_top5['Rata_Kalori'].apply(lambda x: f"{x:.0f} Kcal"),
-                             color_discrete_sequence=["#ec4899"])
+            fig_top = px.bar(df_top5, x='Frekuensi', y='Makanan', orientation='h', text=df_top5['Rata_Kalori'].apply(lambda x: f"{x:.0f} Kcal"), color_discrete_sequence=["#ec4899"])
             fig_top.update_traces(textposition='inside')
             fig_top.update_layout(height=350, margin=dict(l=0, r=0, t=20, b=0), xaxis_title="Jumlah Kali Dimakan", yaxis_title="")
             st.plotly_chart(fig_top, use_container_width=True)
 
         st.divider()
-
-        # --- ROW 3: MACRO SPLIT TREND ---
         st.markdown("### ⚖️ Macro Split Trend")
         st.caption("Keseimbangan asupan Protein, Karbohidrat, dan Lemak harian")
-        
         df_macro_trend = df.groupby('Tanggal')[['Protein', 'Karbohidrat', 'Lemak']].sum().reset_index()
-        fig_area = px.area(df_macro_trend, x='Tanggal', y=['Protein', 'Karbohidrat', 'Lemak'],
-                           color_discrete_map={'Protein': '#3b82f6', 'Karbohidrat': '#f59e0b', 'Lemak': '#ec4899'})
-        fig_area.update_layout(height=400, margin=dict(l=0, r=0, t=10, b=0), 
-                               legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                               yaxis_title="Total Gram (g)", xaxis_title="")
+        fig_area = px.area(df_macro_trend, x='Tanggal', y=['Protein', 'Karbohidrat', 'Lemak'], color_discrete_map={'Protein': '#3b82f6', 'Karbohidrat': '#f59e0b', 'Lemak': '#ec4899'})
+        fig_area.update_layout(height=400, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0), yaxis_title="Total Gram (g)", xaxis_title="")
         st.plotly_chart(fig_area, use_container_width=True)
-
     else:
-        st.info("Belum ada data analitik. Silakan catat asupan makanan Anda terlebih dahulu.")
+        st.info("Belum ada data analitik.")
 
 # ==========================================
 # HALAMAN 3: INPUT MAKANAN (POWERED BY GEMINI)
@@ -239,38 +242,29 @@ elif menu_pilihan == "Input Makanan":
             st.write("")
             submit_ai = st.form_submit_button("🧠 Hitung & Simpan ke Jurnal", use_container_width=True)
             
-            if submit_ai:
-                if makanan_input:
-                    with st.spinner("Gemini sedang menganalisis nutrisi makanan Anda..."):
-                        try:
-                            client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-                            prompt = f"""
-                            Anda adalah ahli gizi. Berikan estimasi total nutrisi untuk porsi makanan ini: '{makanan_input}'.
-                            PENTING: Balas HANYA dengan format JSON persis seperti ini (tanpa backtick, tanpa teks pembuka/penutup):
-                            {{"kalori": 0, "protein": 0, "karbohidrat": 0, "lemak": 0}}
-                            """
-                            
-                            response = client.models.generate_content(
-                                model='gemini-2.5-flash',
-                                contents=prompt,
-                            )
-                            
-                            teks_bersih = response.text.replace('```json', '').replace('```', '').strip()
-                            data_nutrisi = json.loads(teks_bersih)
-                            
-                            kalori = int(data_nutrisi.get("kalori", 0))
-                            protein = int(data_nutrisi.get("protein", 0))
-                            karbo = int(data_nutrisi.get("karbohidrat", 0))
-                            lemak = int(data_nutrisi.get("lemak", 0))
-                            
-                            tanggal_teks = datetime.today().strftime("%Y-%m-%d")
-                            worksheet.append_row([tanggal_teks, waktu_makan, makanan_input, kalori, protein, karbo, lemak])
-                            
-                            st.success(f"✅ Berhasil dicatat: **{makanan_input}**")
-                            st.info(f"📊 **Estimasi AI:** {kalori} Kcal | Protein: {protein}g | Karbo: {karbo}g | Lemak: {lemak}g")
-                            st.balloons()
-                            
-                        except Exception as e:
-                            st.error(f"Gagal menganalisis. Pastikan API Key valid atau coba kata yang lebih jelas. Error: {e}")
-                else:
-                    st.warning("Mohon ketik nama makanan terlebih dahulu!")
+            if submit_ai and makanan_input:
+                with st.spinner("Gemini sedang menganalisis nutrisi makanan Anda..."):
+                    try:
+                        client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+                        prompt = f"""
+                        Anda adalah ahli gizi. Berikan estimasi total nutrisi untuk porsi makanan ini: '{makanan_input}'.
+                        PENTING: Balas HANYA dengan format JSON persis seperti ini (tanpa backtick, tanpa teks pembuka/penutup):
+                        {{"kalori": 0, "protein": 0, "karbohidrat": 0, "lemak": 0}}
+                        """
+                        response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+                        teks_bersih = response.text.replace('```json', '').replace('```', '').strip()
+                        data_nutrisi = json.loads(teks_bersih)
+                        
+                        kalori = int(data_nutrisi.get("kalori", 0))
+                        protein = int(data_nutrisi.get("protein", 0))
+                        karbo = int(data_nutrisi.get("karbohidrat", 0))
+                        lemak = int(data_nutrisi.get("lemak", 0))
+                        
+                        tanggal_teks = datetime.today().strftime("%Y-%m-%d")
+                        worksheet.append_row([tanggal_teks, waktu_makan, makanan_input, kalori, protein, karbo, lemak])
+                        
+                        st.success(f"✅ Berhasil dicatat: **{makanan_input}**")
+                        st.info(f"📊 **Estimasi AI:** {kalori} Kcal | Protein: {protein}g | Karbo: {karbo}g | Lemak: {lemak}g")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Gagal menganalisis. Error: {e}")
