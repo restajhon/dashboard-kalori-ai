@@ -16,20 +16,10 @@ kredensial = st.secrets["gcp_service_account"]
 gc = gspread.service_account_from_dict(kredensial)
 sheet_file = gc.open("KaloriKu") 
 
-# Inisialisasi Worksheet dengan Proteksi
-worksheet = sheet_file.sheet1 # Data Makanan (Pastikan ada kolom 'User' di akhir)
-
-try:
-    ws_users = sheet_file.worksheet("Users")
-except gspread.exceptions.WorksheetNotFound:
-    ws_users = sheet_file.add_worksheet(title="Users", rows="1000", cols="5")
-    ws_users.append_row(["Username", "Password", "Name"])
-
-try:
-    ws_kegiatan = sheet_file.worksheet("Kegiatan")
-except gspread.exceptions.WorksheetNotFound:
-    ws_kegiatan = sheet_file.add_worksheet(title="Kegiatan", rows="1000", cols="10")
-    ws_kegiatan.append_row(["Tanggal", "Waktu", "Kegiatan", "Kalori", "User"])
+# Koneksi Langsung ke Worksheet (Pastikan nama tab di Google Sheets persis seperti ini)
+worksheet = sheet_file.sheet1 
+ws_users = sheet_file.worksheet("Users")
+ws_kegiatan = sheet_file.worksheet("Kegiatan")
 
 # --- FUNGSI KEAMANAN & AUTH ---
 def hash_pass(password):
@@ -104,7 +94,7 @@ if not st.session_state.logged_in:
                     else:
                         st.warning("Username dan Password minimal 3 karakter.")
         st.markdown("</div>", unsafe_allow_html=True)
-    st.stop() # Hentikan eksekusi kode ke bawah jika belum login
+    st.stop() 
 
 # --- GAYA DESAIN CUSTOM (CSS) UNTUK DASHBOARD ---
 st.markdown("""
