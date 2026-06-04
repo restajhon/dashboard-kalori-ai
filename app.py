@@ -6,6 +6,7 @@ from streamlit_option_menu import option_menu
 import json
 from google import genai 
 import gspread
+import hashlib 
 
 # --- PENGATURAN HALAMAN WEB ---
 st.set_page_config(page_title="Kalori AI Workspace", page_icon="🍏", layout="wide", initial_sidebar_state="expanded")
@@ -14,16 +15,98 @@ st.set_page_config(page_title="Kalori AI Workspace", page_icon="🍏", layout="w
 kredensial = st.secrets["gcp_service_account"]
 gc = gspread.service_account_from_dict(kredensial)
 sheet_file = gc.open("KaloriKu") 
-worksheet = sheet_file.sheet1 
 
-# Otorisasi otomatis pembuatan sheet Kegiatan jika belum ada
+# Inisialisasi Worksheet dengan Proteksi
+worksheet = sheet_file.sheet1 # Data Makanan (Pastikan ada kolom 'User' di akhir)
+
 try:
-    worksheet_kegiatan = sheet_file.worksheet("Kegiatan")
+    ws_users = sheet_file.worksheet("Users")
 except gspread.exceptions.WorksheetNotFound:
-    worksheet_kegiatan = sheet_file.add_worksheet(title="Kegiatan", rows="1000", cols="10")
-    worksheet_kegiatan.append_row(["Tanggal", "Waktu", "Kegiatan", "Kalori"])
+    ws_users = sheet_file.add_worksheet(title="Users", rows="1000", cols="5")
+    ws_users.append_row(["Username", "Password", "Name"])
 
-# --- GAYA DESAIN CUSTOM (CSS) ---
+try:
+    ws_kegiatan = sheet_file.worksheet("Kegiatan")
+except gspread.exceptions.WorksheetNotFound:
+    ws_kegiatan = sheet_file.add_worksheet(title="Kegiatan", rows="1000", cols="10")
+    ws_kegiatan.append_row(["Tanggal", "Waktu", "Kegiatan", "Kalori", "User"])
+
+# --- FUNGSI KEAMANAN & AUTH ---
+def hash_pass(password):
+    return hashlib.sha256(str.encode(password)).hexdigest()
+
+def check_login(username, password):
+    users_data = ws_users.get_all_records()
+    for user in users_data:
+        if str(user.get('Username', '')) == username and str(user.get('Password', '')) == hash_pass(password):
+            return user.get('Name', 'User')
+    return None
+
+def signup_user(username, password, name):
+    users_data = ws_users.get_all_records()
+    if any(str(u.get('Username', '')) == username for u in users_data):
+        return False
+    ws_users.append_row([username, hash_pass(password), name])
+    return True
+
+# --- SESSION STATE UNTUK LOGIN ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.user_display_name = ""
+
+# --- TAMPILAN LOGIN / SIGNUP ---
+if not st.session_state.logged_in:
+    st.markdown("""
+        <style>
+        .login-box {
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
+            backdrop-filter: blur(10px); border: 1px solid rgba(128, 128, 128, 0.2);
+            border-radius: 16px; padding: 40px; margin-top: 50px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    cols = st.columns([1, 1.5, 1])
+    with cols[1]:
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; margin-bottom: 30px;'>🍏 Kalori AI</h1>", unsafe_allow_html=True)
+        
+        tab_login, tab_signup = st.tabs(["Masuk", "Daftar Baru"])
+        
+        with tab_login:
+            with st.form("login_form"):
+                u_in = st.text_input("Username")
+                p_in = st.text_input("Password", type="password")
+                btn_login = st.form_submit_button("Masuk Sekarang", use_container_width=True)
+                if btn_login:
+                    name = check_login(u_in, p_in)
+                    if name:
+                        st.session_state.logged_in = True
+                        st.session_state.username = u_in
+                        st.session_state.user_display_name = name
+                        st.rerun()
+                    else:
+                        st.error("Username atau Password salah!")
+        
+        with tab_signup:
+            with st.form("signup_form"):
+                new_name = st.text_input("Nama Panggilan")
+                new_u = st.text_input("Username Baru (Tanpa Spasi)")
+                new_p = st.text_input("Password Baru", type="password")
+                btn_signup = st.form_submit_button("Buat Akun", use_container_width=True)
+                if btn_signup:
+                    if len(new_u) > 2 and len(new_p) > 2:
+                        if signup_user(new_u, new_p, new_name):
+                            st.success("✅ Akun berhasil dibuat! Silakan pindah ke tab 'Masuk'.")
+                        else:
+                            st.error("Username sudah dipakai orang lain.")
+                    else:
+                        st.warning("Username dan Password minimal 3 karakter.")
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.stop() # Hentikan eksekusi kode ke bawah jika belum login
+
+# --- GAYA DESAIN CUSTOM (CSS) UNTUK DASHBOARD ---
 st.markdown("""
     <style>
     .block-container { padding-top: 1rem; padding-bottom: 1rem; max-width: 98%; }
@@ -32,8 +115,7 @@ st.markdown("""
     .glass-card {
         background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
         backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(128, 128, 128, 0.2); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
         border-radius: 16px; padding: 24px; height: 100%; transition: all 0.3s ease;
     }
     .glass-card:hover { transform: translateY(-5px); border: 1px solid rgba(16, 185, 129, 0.5); box-shadow: 0 12px 40px 0 rgba(16, 185, 129, 0.15); }
@@ -66,7 +148,7 @@ def buat_banner(judul, subjudul, gradient="linear-gradient(90deg, #064e3b 0%, #1
 # SIDEBAR NAVIGATION
 # ==========================================
 with st.sidebar:
-    st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🍏 Kalori AI</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center; margin-bottom: 20px;'>👋 Hai, {st.session_state.user_display_name}!</h3>", unsafe_allow_html=True)
     menu_pilihan = option_menu(
         menu_title=None,  
         options=["Dashboard", "Analitik Nutrisi", "Analitik Kebugaran", "Input Makanan", "Input Kegiatan"], 
@@ -83,43 +165,52 @@ with st.sidebar:
     st.markdown("### 🎯 Target Harian")
     target_kalori = st.number_input("Target Nutrisi (kcal)", value=2000, step=100)
     
-    # Ambil Data Sinkronisasi
+    # AMBIL & FILTER DATA BERDASARKAN USERNAME
     data_semua = worksheet.get_all_records()
-    df = pd.DataFrame(data_semua) if len(data_semua) > 0 else pd.DataFrame()
-    
-    data_keg = worksheet_kegiatan.get_all_records()
-    df_keg = pd.DataFrame(data_keg) if len(data_keg) > 0 else pd.DataFrame()
+    df_raw = pd.DataFrame(data_semua) if len(data_semua) > 0 else pd.DataFrame()
+    if not df_raw.empty and 'User' in df_raw.columns:
+        df = df_raw[df_raw['User'] == st.session_state.username].copy()
+    else:
+        df = pd.DataFrame()
+
+    data_keg = ws_kegiatan.get_all_records()
+    df_keg_raw = pd.DataFrame(data_keg) if len(data_keg) > 0 else pd.DataFrame()
+    if not df_keg_raw.empty and 'User' in df_keg_raw.columns:
+        df_keg = df_keg_raw[df_keg_raw['User'] == st.session_state.username].copy()
+    else:
+        df_keg = pd.DataFrame()
     
     kalori_hari_ini = 0
     kalori_keluar_hari_ini = 0
     
     if not df.empty:
         df['Tanggal'] = pd.to_datetime(df['Tanggal']).dt.date
-        df['Kalori'] = pd.to_numeric(df['Kalori'])
-        df['Protein'] = pd.to_numeric(df['Protein'])
-        df['Karbohidrat'] = pd.to_numeric(df['Karbohidrat'])
-        df['Lemak'] = pd.to_numeric(df['Lemak'])
+        df['Kalori'] = pd.to_numeric(df['Kalori'], errors='coerce').fillna(0)
+        df['Protein'] = pd.to_numeric(df['Protein'], errors='coerce').fillna(0)
+        df['Karbohidrat'] = pd.to_numeric(df['Karbohidrat'], errors='coerce').fillna(0)
+        df['Lemak'] = pd.to_numeric(df['Lemak'], errors='coerce').fillna(0)
         kalori_hari_ini = df[df['Tanggal'] == datetime.today().date()]['Kalori'].sum()
         
     if not df_keg.empty:
         df_keg['Tanggal'] = pd.to_datetime(df_keg['Tanggal']).dt.date
-        df_keg['Kalori'] = pd.to_numeric(df_keg['Kalori'])
+        df_keg['Kalori'] = pd.to_numeric(df_keg['Kalori'], errors='coerce').fillna(0)
         kalori_keluar_hari_ini = df_keg[df_keg['Tanggal'] == datetime.today().date()]['Kalori'].sum()
 
-    # Hitung Net balance untuk progress harian
     net_kalori_hari_ini = kalori_hari_ini - kalori_keluar_hari_ini
     persen_kalori = min(max((net_kalori_hari_ini / target_kalori), 0.0), 1.0) if target_kalori > 0 else 0
     st.progress(persen_kalori)
     st.caption(f"{net_kalori_hari_ini:,.0f} / {target_kalori:,.0f} Net Kcal Terpenuhi")
-
-# Palet warna premium grafik
-CHART_COLORS = ["#10b981", "#ef4444", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6"]
+    
+    st.write("")
+    if st.button("🚪 Keluar Akun", use_container_width=True):
+        st.session_state.logged_in = False
+        st.rerun()
 
 # ==========================================
 # HALAMAN 1: DASHBOARD
 # ==========================================
 if menu_pilihan == "Dashboard":
-    buat_banner("Good morning, Difa ✨", "Fitness & Nutrition Tracker Hub — Pantau balans kalori dan progres latihanmu.")
+    buat_banner(f"Welcome to your Workspace, {st.session_state.user_display_name} ✨", "Fitness & Nutrition Tracker Hub — Pantau balans kalori dan progres latihanmu.")
     
     protein_hari_ini = df[df['Tanggal'] == datetime.today().date()]['Protein'].sum() if not df.empty else 0
     karbo_hari_ini = df[df['Tanggal'] == datetime.today().date()]['Karbohidrat'].sum() if not df.empty else 0
@@ -180,7 +271,7 @@ if menu_pilihan == "Dashboard":
             else: s_date = h_ini - timedelta(days=365)
             
             df_m_dash = df[(df['Tanggal'] >= s_date) & (df['Tanggal'] <= h_ini) & (df['Waktu'].isin(pil_w1))]
-            st.dataframe(df_m_dash.iloc[::-1], use_container_width=True, hide_index=True)
+            st.dataframe(df_m_dash.drop(columns=['User'], errors='ignore').iloc[::-1], use_container_width=True, hide_index=True)
         else: st.info("Belum ada data jurnal makanan.")
         
     with tab_kegiatan_tabel:
@@ -196,7 +287,7 @@ if menu_pilihan == "Dashboard":
             else: s_date_k = h_ini - timedelta(days=365)
             
             df_k_dash = df_keg[(df_keg['Tanggal'] >= s_date_k) & (df_keg['Tanggal'] <= h_ini) & (df_keg['Waktu'].isin(pil_w2))]
-            st.dataframe(df_k_dash.iloc[::-1], use_container_width=True, hide_index=True)
+            st.dataframe(df_k_dash.drop(columns=['User'], errors='ignore').iloc[::-1], use_container_width=True, hide_index=True)
         else: st.info("Belum ada data jurnal latihan gym.")
 
 # ==========================================
@@ -297,7 +388,8 @@ elif menu_pilihan == "Input Makanan":
                         client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
                         prompt = f"Anda adalah ahli gizi. Berikan estimasi total nutrisi untuk porsi makanan ini: '{makanan_input}'. Balas HANYA dengan format JSON persis seperti ini: {{\"kalori\": 0, \"protein\": 0, \"karbohidrat\": 0, \"lemak\": 0}}"
                         response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-                        teks_bersih = response.text.replace('```json', '').replace('```', '').strip()
+                        teks_bersih = response.text.replace('```json', '').replace('
+```', '').strip()
                         data_nutrisi = json.loads(teks_bersih)
                         
                         kalori = int(data_nutrisi.get("kalori", 0))
@@ -305,9 +397,9 @@ elif menu_pilihan == "Input Makanan":
                         karbo = int(data_nutrisi.get("karbohidrat", 0))
                         lemak = int(data_nutrisi.get("lemak", 0))
                         
-                        # Simpan dengan tanggal yang dipilih user
-                        worksheet.append_row([tanggal_makan.strftime("%Y-%m-%d"), waktu_makan, makanan_input, kalori, protein, karbo, lemak])
-                        st.success(f"✅ Berhasil dicatat ke database untuk tanggal {tanggal_makan.strftime('%d %b %Y')}!")
+                        # SIMPAN DENGAN TAGGING USERNAME
+                        worksheet.append_row([tanggal_makan.strftime("%Y-%m-%d"), waktu_makan, makanan_input, kalori, protein, karbo, lemak, st.session_state.username])
+                        st.success(f"✅ Berhasil dicatat ke database pribadi Anda untuk tanggal {tanggal_makan.strftime('%d %b %Y')}!")
                         st.balloons()
                     except Exception as e: st.error(f"Gagal menganalisis. Error: {e}")
 
@@ -338,8 +430,8 @@ elif menu_pilihan == "Input Kegiatan":
                         
                         kalori_burn = int(data_kegiatan.get("kalori", 0))
                         
-                        # Simpan dengan tanggal yang dipilih user
-                        worksheet_kegiatan.append_row([tanggal_kegiatan.strftime("%Y-%m-%d"), waktu_kegiatan, kegiatan_input, kalori_burn])
-                        st.success(f"🔥 Luar biasa! Berhasil dicatat untuk tanggal {tanggal_kegiatan.strftime('%d %b %Y')}: **{kegiatan_input}** terbakar sekitar **{kalori_burn} Kcal**")
+                        # SIMPAN DENGAN TAGGING USERNAME
+                        ws_kegiatan.append_row([tanggal_kegiatan.strftime("%Y-%m-%d"), waktu_kegiatan, kegiatan_input, kalori_burn, st.session_state.username])
+                        st.success(f"🔥 Luar biasa! Berhasil dicatat ke data pribadi Anda: **{kegiatan_input}** terbakar sekitar **{kalori_burn} Kcal**")
                         st.snow()
                     except Exception as e: st.error(f"Gagal menghitung kalori aktivitas. Error: {e}")
