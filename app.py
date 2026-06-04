@@ -293,8 +293,7 @@ elif menu_pilihan == "Input Makanan":
                         client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
                         prompt = f"Anda adalah ahli gizi. Berikan estimasi total nutrisi untuk porsi makanan ini: '{makanan_input}'. Balas HANYA dengan format JSON persis seperti ini: {{\"kalori\": 0, \"protein\": 0, \"karbohidrat\": 0, \"lemak\": 0}}"
                         response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-                        teks_bersih = response.text.replace('```json', '').replace('
-```', '').strip()
+                        teks_bersih = response.text.replace('```json', '').replace('```', '').strip()
                         data_nutrisi = json.loads(teks_bersih)
                         
                         kalori = int(data_nutrisi.get("kalori", 0))
