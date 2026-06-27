@@ -169,7 +169,7 @@ with st.sidebar:
     )
     st.divider()
     st.markdown("### 🎯 Target Harian")
-    target_kalori = st.number_input("Target Nutrisi (kcal)", value=2000, step=100)
+    target_kalori = st.number_input("Target Nutrisi (kcal)", value=1500, step=100)
     
     # AMBIL & FILTER DATA BERDASARKAN USERNAME
     data_semua = worksheet.get_all_records()
